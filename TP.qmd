@@ -1,4 +1,27 @@
 ```{r}
+library(tidyverse)
+library(fastDummies)
+```
+Intro
+Ce qu'on cherche à faire
+Techniques
+Applications
+Analyse résultat 
+Conclusion
+
+
+
+```{r, warning=FALSE}
 dat = read.csv("data.csv")
+
+dat[1:147] = sapply(dat[1:147], as.numeric)
+```
+
+```{r}
+# régression simple
+dat_lm = dummy_cols(dat, select_columns = "mus2")
+dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
+mod_simple = lm(sui1 ~ metal, data = dat_lm)
+summary(mod_simple)
 ```
 
