@@ -15,13 +15,52 @@ Conclusion
 dat = read.csv("data.csv")
 
 dat[1:147] = sapply(dat[1:147], as.numeric)
+
+#dat_full = dat %>% mutate_if(is.numeric, funs(replace(., is.na(.), mean(., na.rm = TRUE))))
+# si on veut appliquer la fonction aux colonnes 11:13
+
+dat_full = dat %>% mutate_at(vars(-c(11:13)), ~round(ifelse(is.na(.), mean(., na.rm = TRUE), .), 0))
+# Imputer les données manquantes. Les colonnes exclues le sont car elles sont largement composé de NA
+
+dat_full[,-c(1,3,10,11,13)] = sapply(dat_full[,-c(1,3,10,11,13)], as.factor)
+
+dat_full[sapply(dat_full, is.character)] <- lapply(dat_full[sapply(dat_full, is.character)], as.factor)
+# Changer la classe des variables catégorielles en facteur
 ```
 
 ```{r}
-# régression simple
-dat_lm = dummy_cols(dat, select_columns = "mus2")
+# Création d'un indice personnalisé pour le suicide 
+#dat_full = dat_full %>% mutate(suicide = (1/6*(2*as.numeric(sui1)+2*as.numeric(sui8)+as.numeric(sui5)+as.numeric(sui7))))
+```
+
+
+```{r}
+dat_lm = dummy_cols(dat_full, select_columns = c("mus2","statmar", "negp1", "negm1"))
+dat_lm = dat_lm %>% mutate(sui1 = ifelse(sui1 == 1, 1, 0))
 dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
+dat_lm = dat_lm %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0))
+
+# Création de variables pour les régressions
+```
+
+
+```{r}
+# Créer une variable metal qui = 1 si la personne écoute du métal
 mod_simple = lm(sui1 ~ metal, data = dat_lm)
 summary(mod_simple)
+```
+
+```{r}
+#Régression plus complexe (celle du prof)
+model <- glm(sui1 ~ age + statmar_1+ negp1_1 + negm1_1 +drog + metal, 
+             data = dat_lm %>% filter(sexe == 2), 
+             family = binomial())
+summary(model)
+
+model2 <- glm(sui1 ~ age + statmar_1+ negp1_1 + negm1_1 +drog + metal, 
+             data = dat_lm %>% filter(sexe == 1), 
+             family = binomial())
+summary(model2)
+
 ```
 
