@@ -23,7 +23,7 @@ dat[1:147] = sapply(dat[1:147], as.numeric)
 dat_full = dat %>% mutate_at(vars(-c(11:13)), ~round(ifelse(is.na(.), mean(., na.rm = TRUE), .), 0))
 # Imputer les données manquantes. Les colonnes exclues le sont car elles sont largement composé de NA
 
-dat_full[,-c(1,3,10,11,13)] = sapply(dat_full[,-c(1,3,10,11,13)], as.factor)
+dat_full[,-c(1,2,3,4,10,11,12,13)] = sapply(dat_full[,-c(1,2,3,4,10,11,12,13)], as.factor)
 
 dat_full[sapply(dat_full, is.character)] <- lapply(dat_full[sapply(dat_full, is.character)], as.factor)
 # Changer la classe des variables catégorielles en facteur
@@ -36,10 +36,11 @@ dat_full[sapply(dat_full, is.character)] <- lapply(dat_full[sapply(dat_full, is.
 
 
 ```{r}
-#dat_lm = dummy_cols(dat_full, select_columns = c("mus2","statmar", "negp1", "negm1"))
-dat_lm = dat_lm %>% mutate(sui1 = ifelse(sui1 == 1, 1, 0))
-#dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
-#dat_lm = dat_lm %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0))
+dat_full = dat_full %>% mutate(sui1 = ifelse(sui1 == 1, 1, 0))
+dat_full = dat_full %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0))
+dat_lm = dummy_cols(dat_full, remove_selected_columns = TRUE, remove_first_dummy = TRUE)
+dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
+
 
 # Création de variables pour les régressions
 ```
@@ -53,13 +54,13 @@ summary(mod_simple)
 
 ```{r}
 #Régression plus complexe (celle du prof)
-model <- glm(sui1 ~ age + statmar_1+ negp1_1 + negm1_1 +drog + metal, 
+model <- glm(sui1 ~ age + statmar_2+ negp1_2 + negm1_2 +drog + metal, 
              data = dat_lm %>% filter(sexe == 2), 
              family = binomial())
 summary(model)
 # Homme
 
-model2 <- glm(sui1 ~ age + statmar_1+ negp1_1 + negm1_1 +drog + metal, 
+model2 <- glm(sui1 ~ age + statmar_2+ negp1_2 + negm1_2 +drog + metal, 
              data = dat_lm %>% filter(sexe == 1), 
              family = binomial())
 summary(model2)
@@ -67,10 +68,66 @@ summary(model2)
 ```
 
 ```{r}
-# Régression Ridge
+set.seed(1234)
+ECH.TRAIN <- sample(1:304, 210)
+train.dat <- dat_lm[ECH.TRAIN,]
+test.dat <- dat_lm[-ECH.TRAIN,]
+```
 
-sapply(lapply(dat_lm, unique), length)
-test = lm(sui1 ~ . -ecole -nsujet -rencfois - tempsep - voipar, data = dat %>% filter(sexe == 2))
-summary(test)
+```{r}
+#Standardisation des variables
+#train.dat[,-(2:4)]  <- scale(train.dat[,-(2:4)])
+#test.dat[,-(2:4)]  <- scale(test.dat[,-(2:4)])
+
+train.dat <- as.data.frame(train.dat)
+test.dat <- as.data.frame(test.dat)
+
+train.dat = train.dat %>% select_if(~ ! any(is.na(.)))
+test.dat = test.dat %>% select_if(~ ! any(is.na(.)))
+```
+
+```{r}
+#Division des données d'entrainement en 10 groupes de 21 individus (observations)
+PARTITION = sample(rep(1:10, rep(21,10)),210)
+```
+
+```{r}
+crossval <- function(mod){
+  f1 <- function(x){
+    modi = update(mod, data = TRAIN.df[!(PARTITION %in% x),])
+    table(1*(predict(modi, newdata = TRAIN.df[PARTITION %in% x,],
+                     type = "resp")>0.5),
+          TRAIN.df[(PARTITION %in% x),"STATUT"])
+  }
+  CVT <- mapply(f1, x = 1:10)
+  as.table(matrix(apply(CVT, 1, sum), 2, 2,
+                  dimnames = list(c("P.ND","P.D"),
+                                  c("T.ND","T.D"))))
+} 
+```
+
+
+```{r}
+# Régression normale
+glm0 <- glm(sui1 ~ . -nsujet -ecole, data=train.dat %>% filter(sexe == 
+    1), family = "binomial")
+summary(glm0)
+```
+
+
+```{r}
+# Régression normale
+glm0 <- glm(sui1 ~ . -nsujet -ecole -rencfois - voipar -tempsep, data=dat_full, family = "binomial")
+summary(glm0)
+```
+
+
+```{r}
+var.model = names(dat_lm)[10:ncol(dat_lm)]
+
+cv.glmn1 <- cv.glmnet(x= train.dat[,var.model] %>% as.matrix,
+                      y = train.dat[,"STATUT"], alpha = 0, nfolds = 10, 
+                      foldid = PARTITION, intercept= TRUE, 
+                      family = "binomial", standardize = TRUE)
 ```
 
