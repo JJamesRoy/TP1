@@ -16,38 +16,39 @@ Conclusion
 dat = read.csv("data.csv")
 
 dat[1:147] = sapply(dat[1:147], as.numeric)
-
-#dat_full = dat %>% mutate_if(is.numeric, funs(replace(., is.na(.), mean(., na.rm = TRUE))))
-# si on veut appliquer la fonction aux colonnes 11:13
+# Convertir en numeric à la place de character
 
 dat_full = dat %>% mutate_at(vars(-c(11:13)), ~round(ifelse(is.na(.), mean(., na.rm = TRUE), .), 0))
-# Imputer les données manquantes. Les colonnes exclues le sont car elles sont largement composé de NA
+# Imputer les données manquantes. Les colonnes exclues le sont car elles sont largement composé de NA et ça serait une mauvaise idée de les imputer
 
 dat_full[,-c(1,2,3,4,10,11,12,13)] = sapply(dat_full[,-c(1,2,3,4,10,11,12,13)], as.factor)
 
 dat_full[sapply(dat_full, is.character)] <- lapply(dat_full[sapply(dat_full, is.character)], as.factor)
-# Changer la classe des variables catégorielles en facteur
+# Changer la classe des variables catégorielles en facteur (ça bug donc en 2 fonctions)
 ```
 
 ```{r}
-# Création d'un indice personnalisé pour le suicide 
+# Création d'un indice personnalisé pour le suicide (pas encore utile)
 #dat_full = dat_full %>% mutate(suicide = (1/6*(2*as.numeric(sui1)+2*as.numeric(sui8)+as.numeric(sui5)+as.numeric(sui7))))
 ```
 
 
 ```{r}
 dat_full = dat_full %>% mutate(sui1 = ifelse(sui1 == 1, 1, 0))
+# Créer la variable y, = 1 si envie de suicide, 0 sinon
 dat_full = dat_full %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0))
+# Créer une variable drog qui rassemble la consommation de drogues en une (mieux controler)
 dat_lm = dummy_cols(dat_full, remove_selected_columns = TRUE, remove_first_dummy = TRUE)
+# Création de dummy, enlève les variables catégorielles dont elles viennet et la première dummy pour éviter la collinéarité
+
 dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
+# Créer une varaible metal pour le x dont on veut l'effet
 
-
-# Création de variables pour les régressions
 ```
 
 
 ```{r}
-# Créer une variable metal qui = 1 si la personne écoute du métal
+# Modele OLS simple
 mod_simple = lm(sui1 ~ metal, data = dat_lm)
 summary(mod_simple)
 ```
@@ -66,6 +67,7 @@ model2 <- glm(sui1 ~ age + statmar_2+ negp1_2 + negm1_2 +drog + metal,
 summary(model2)
 # Femme
 ```
+---------------ÇA PART EN COUILLE ICI---------------
 
 ```{r}
 set.seed(1234)
@@ -104,6 +106,29 @@ crossval <- function(mod){
                   dimnames = list(c("P.ND","P.D"),
                                   c("T.ND","T.D"))))
 } 
+```
+
+
+```{r}
+# Trouver le sd par colonne
+sd_per_column <- apply(dat_lm, 2, sd)
+
+# Enlever les colonnes avec sd = 0
+cols_with_zero_var <- which(sd_per_column == 0)
+
+# Supprimer les colonnes avec une variance nulle
+dat_sd <- dat_lm[, -cols_with_zero_var]
+
+dat_sd = dat_sd %>% select(-c("rencfois", "voipar", "tempsep"))
+
+corr_matrix <- cor(dat_sd, use = "pairwise.complete.obs")
+
+# trouver les indices des corrélations supérieures à 0,9
+high_corr_indices <- which(abs(corr_matrix) > 0.9 & upper.tri(corr_matrix), arr.ind = TRUE)
+high_corr_elements <- which(corr_matrix > 0.9, arr.ind = TRUE)
+
+# extraire les noms de variables correspondants
+var_names <- colnames(corr_matrix)
 ```
 
 
