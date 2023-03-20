@@ -1,6 +1,7 @@
 ```{r}
 library(tidyverse)
 library(fastDummies)
+library(glmnet)
 ```
 Intro
 Ce qu'on cherche à faire
@@ -35,10 +36,10 @@ dat_full[sapply(dat_full, is.character)] <- lapply(dat_full[sapply(dat_full, is.
 
 
 ```{r}
-dat_lm = dummy_cols(dat_full, select_columns = c("mus2","statmar", "negp1", "negm1"))
+#dat_lm = dummy_cols(dat_full, select_columns = c("mus2","statmar", "negp1", "negm1"))
 dat_lm = dat_lm %>% mutate(sui1 = ifelse(sui1 == 1, 1, 0))
-dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
-dat_lm = dat_lm %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0))
+#dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
+#dat_lm = dat_lm %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0))
 
 # Création de variables pour les régressions
 ```
@@ -56,11 +57,20 @@ model <- glm(sui1 ~ age + statmar_1+ negp1_1 + negm1_1 +drog + metal,
              data = dat_lm %>% filter(sexe == 2), 
              family = binomial())
 summary(model)
+# Homme
 
 model2 <- glm(sui1 ~ age + statmar_1+ negp1_1 + negm1_1 +drog + metal, 
              data = dat_lm %>% filter(sexe == 1), 
              family = binomial())
 summary(model2)
+# Femme
+```
 
+```{r}
+# Régression Ridge
+
+sapply(lapply(dat_lm, unique), length)
+test = lm(sui1 ~ . -ecole -nsujet -rencfois - tempsep - voipar, data = dat %>% filter(sexe == 2))
+summary(test)
 ```
 
