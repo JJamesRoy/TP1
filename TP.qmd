@@ -36,12 +36,13 @@ dat_full[sapply(dat_full, is.character)] <- lapply(dat_full[sapply(dat_full, is.
 ```{r}
 dat_full = dat_full %>% mutate(sui1 = ifelse(sui1 == 1, 1, 0))
 # Créer la variable y, = 1 si envie de suicide, 0 sinon
-dat_full = dat_full %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0))
+dat_full = dat_full %>% mutate(drog = ifelse(as.numeric(drog1) >= 4 | as.numeric(drog2) >= 4 | as.numeric(drog3) >= 4 | as.numeric(drog4) >= 4, 1, 0)) %>% select(-c("drog1", "drog2", "drog3", "drog4"))
 # Créer une variable drog qui rassemble la consommation de drogues en une (mieux controler)
 dat_lm = dummy_cols(dat_full, remove_selected_columns = TRUE, remove_first_dummy = TRUE)
 # Création de dummy, enlève les variables catégorielles dont elles viennet et la première dummy pour éviter la collinéarité
 
 dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
+dat_lm = dat_lm %>% select(-c("mus2_4", "mus2_5"))
 # Créer une varaible metal pour le x dont on veut l'effet
 
 ```
@@ -142,17 +143,203 @@ summary(glm0)
 
 ```{r}
 # Régression normale
-glm0 <- glm(sui1 ~ . -nsujet -ecole -rencfois - voipar -tempsep, data=dat_full, family = "binomial")
+glm0 <- glm(sui1 ~ . -nsujet -ecole -rencfois - voipar -tempsep, data=dat_lm, family = "binomial")
 summary(glm0)
 ```
 
-
+--------------Logistique---------------
 ```{r}
-var.model = names(dat_lm)[10:ncol(dat_lm)]
-
-cv.glmn1 <- cv.glmnet(x= train.dat[,var.model] %>% as.matrix,
-                      y = train.dat[,"STATUT"], alpha = 0, nfolds = 10, 
-                      foldid = PARTITION, intercept= TRUE, 
-                      family = "binomial", standardize = TRUE)
+var.model = names(train.dat)[7:ncol(train.dat)]
 ```
 
+```{r}
+glm1 <- glmnet(x = train.dat[, var.model] %>% as.matrix, y = train.dat[,"sui1"], lambda=0, family = "binomial")
+```
+
+```{r}
+#Visualisation des résultats 
+#print(glm1)
+predict(glm1, type="coef", "lambda.min", allCoef = TRUE)
+```
+
+```{r}
+#Prédiction à l'aide de la régression logistique classique
+glm1p <- predict(glm1, newx = train.dat[,var.model] %>%
+                   as.matrix, s = "lambda.min")
+```
+
+```{r}
+#Table de classification montrant la performance prédictive du modèle (fréquences, puis proportions)
+cv0 <- table(1*(glm1p>0), train.dat$sui1)
+cv0
+prop.table(cv0)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cv0)))*100)
+```
+
+--------------RIDGE------------------
+
+```{r}
+# Ridge
+var.model = names(train.dat)[7:ncol(train.dat)]
+
+cv.glmn1 <- cv.glmnet(x= train.dat[,var.model] %>% as.matrix,
+                      y = train.dat[,"sui1"], alpha = 0, nfolds = 10, 
+                      foldid = PARTITION, intercept= TRUE, 
+                      family = "binomial", standardize = TRUE)
+plot(cv.glmn1)
+```
+
+```{r}
+##Régression logistique avec régularisation ridge 
+glmn1.0 <- glmnet(x = train.dat[, var.model] %>% as.matrix,
+                  y = train.dat[,"sui1"], alpha = 0, family = "binomial")
+
+#Visualisation: évolution des coefficients selon valeur de lambda avec régularisation ridge + ligne rouge indiquant le lambda optimal
+plot(glmn1.0, xvar = "lambda", label = FALSE, xlab = ~ log(lambda))
+abline( v = log(cv.glmn1$lambda.min), col = "red", lty = 2)
+```
+
+```{r}
+#Prédiction à l'aide de la régression logistique avec régularisation ridge
+glmn1p <- predict(cv.glmn1, newx = train.dat[,var.model] %>%
+                    as.matrix, s = "lambda.min") 
+```
+
+```{r}
+#Table de classification montrant la performance prédictive du modèle
+cv2 <- table(1*(glmn1p>0), train.dat$sui1)
+cv2
+prop.table(cv2)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cv2)))*100)
+```
+
+----------------LASSO---------------------
+
+```{r, out.width="89%", out.height="89%"}
+##Régression logistique avec régularisation lasso
+#Sélection du lambda par validation croisée à 10 plis
+cv.glmn2 <- cv.glmnet(x = train.dat[,var.model] %>% as.matrix,
+                    y = train.dat[,"sui1"], alpha = 1, nfolds = 10,
+                    foldid = PARTITION, family = "binomial")
+
+glmn2 <- glmnet(x = train.dat[,var.model] %>%
+                as.matrix, y = train.dat[,"sui1"], alpha = 1, family = "binomial",
+                lambda = cv.glmn2$lambda.min)
+
+#Visualisation des résultats de la validation croisée avec régularisation lasso (valeur de lambda optimale indiquée par les lignes verticales pointillées)
+plot(cv.glmn2)
+```
+
+```{r}
+##Régression logistique avec régularisation lasso 
+glmn2.0 <- glmnet(x = train.dat[,var.model] %>% as.matrix,
+                  y = train.dat[,"sui1"], alpha = 1, family = "binomial")
+
+#Visualisation: évolution des coefficients selon valeur de lambda avec régularisation lasso + ligne rouge indiquant le lambda optimal
+plot(glmn2.0, xvar = "lambda", label = FALSE, xlab = ~log(lambda))
+abline(v = log(cv.glmn2$lambda.min), lty = 2, col = "red")
+```
+
+```{r}
+#Prédiction à l'aide de la régression logistique avec régularisation lasso
+glmn2p <- predict(cv.glmn2, newx = train.dat[,var.model] %>%
+                  as.matrix, s = "lambda.min")
+```
+
+```{r}
+#Table de classification montrant la performance prédictive du modèle
+cv3 <- table(1*(glmn2p>0), train.dat$sui1)
+cv3
+prop.table(cv3)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cv3)))*100)
+```
+
+-------------ELASTIC NET---------------
+
+```{r}
+#Validation croisée à 10-plis pour obtention de la valeur optimale de lambda selon la valeur d'alpha (au dixième près)
+cv.glmn3 <- list()
+
+layout(matrix(1:9,3,3, byrow = TRUE))
+for(al in seq(0.1,0.9,0.1)){
+    cv.glmn3[[sprintf("%.1f",al)]] <-
+    cv.glmnet(x = train.dat[,var.model] %>% as.matrix,
+    y = train.dat[,"sui1"], nfolds = 10, foldid = PARTITION,
+    alpha = al, family = "binomial")
+plot(cv.glmn3[[sprintf("%.1f",al)]],
+main = latex2exp::TeX(sprintf("$\\alpha = %.1f$",al)), ylim = c(1.18, 1.42))
+}
+```
+
+Ce tableau montre la déviance minimale (première colonne) pour chaque valeur d'alpha, qui permet de déduire le lambda optimal (deuxième colonne).
+
+```{r}
+#Résumé: lambda optimal pour chaque valeur d'alpha
+layout (1)
+lapply(cv.glmn3, function(x) c(x$cvm[x$lambda == x$lambda.min],
++ x$cvsd[x$lambda == x$lambda.min]))
+```
+
+```{r}
+#Régression logistique avec régularisation elastic-net (lambda et alpha choisis par validation croisée précédemment) 
+glmn3 <- glmnet(x = train.dat[,var.model] %>% as.matrix,
+          y = train.dat[,"sui1"], alpha = 0.1, family = "binomial",
+          lambda = cv.glmn3[[9]]$lambda.min)
+```
+
+```{r}
+#Prédiction à l'aide de la régression logistique avec régularisation elastic-net
+glmn3p <- predict(cv.glmn3[[9]], newx = train.dat[,var.model] %>% as.matrix)
+```
+
+```{r}
+#Table de classification montrant la performance prédictive du modèle
+cv4 <- table(1*(glmn3p>0), train.dat$sui1)
+cv4
+prop.table(cv4)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cv4)))*100)
+```
+
+### Validation des modèles avec l'échantillon test
+
+On prend maintenant l'échantillon de test et on valide nos prédictions basées sur le modèle construit avec l'échantillon d'entraînement.
+
+```{r}
+#Prédiction avec les données test à partir de chaque modèle créé ci-haut
+glm1tp <- predict(glm1, newx = test.dat[,var.model] %>% as.matrix, s = "lambda.min")
+glmn1tp <- predict(cv.glmn1, newx = test.dat[,var.model] %>% as.matrix, s = "lambda.min")
+glmn2tp <- predict(cv.glmn2, newx = test.dat[,var.model] %>% as.matrix, s = "lambda.min")
+glmn3tp <- predict(cv.glmn3[[9]], newx = test.dat[,var.model] %>%as.matrix, s = "lambda.min")
+```
+
+```{r}
+#Table de classification résumant la performance du modèle additif sur les données test
+cvt1 <- table(1*(glm1tp>0), test.dat$sui1)
+cvt1
+prop.table(cvt1)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cvt1)))*100)
+```
+
+```{r}
+#Table de classification résumant la performance du modèle avec régularisation ridge sur les données test
+cvt2 <- table(1*(glm1tp>0), test.dat$sui1)
+cvt2
+prop.table(cvt2)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cvt2)))*100)
+```
+
+```{r}
+#Table de classification résumant la performance du modèle avec régularisation lasso sur les données test
+cvt3 <- table(1*(glmn2tp>0), test.dat$sui1)
+cvt3
+prop.table(cvt3)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cvt3)))*100)
+```
+
+```{r}
+#Table de classification résumant la performance du modèle avec régularisation elastic-net sur les données test
+cvt4 <- table(1*(glmn3tp>0), test.dat$sui1)
+cvt4
+prop.table(cvt4)*100
+sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cvt4)))*100)
+```
