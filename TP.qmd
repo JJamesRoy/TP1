@@ -28,8 +28,7 @@ dat_full[sapply(dat_full, is.character)] <- lapply(dat_full[sapply(dat_full, is.
 ```
 
 ```{r}
-# Création d'un indice personnalisé pour le suicide (pas encore utile)
-#dat_full = dat_full %>% mutate(suicide = (1/6*(2*as.numeric(sui1)+2*as.numeric(sui8)+as.numeric(sui5)+as.numeric(sui7))))
+dat_full = dat_full %>% select(c(age, niveau, sexe, statmar, adulthab, travp, scolp, travm, scolm, negp1, negp8, negp9, negm1, negm8, negm9, dets1, mus2, mushr, parimp, muscol, musagg, aprmal, poster, pers, info, alien1, alien2, sui1, drog1, drog2, drog3, drog4))
 ```
 
 
@@ -42,7 +41,7 @@ dat_lm = dummy_cols(dat_full, remove_selected_columns = TRUE, remove_first_dummy
 # Création de dummy, enlève les variables catégorielles dont elles viennet et la première dummy pour éviter la collinéarité
 
 dat_lm$metal = dat_lm$mus2_4+dat_lm$mus2_5
-dat_lm = dat_lm %>% select(-c("mus2_4", "mus2_5"))
+dat_lm = dat_lm %>% select(-c("mus2_4", "mus2_5", "mus2_3", "mus2_2"))
 # Créer une varaible metal pour le x dont on veut l'effet
 
 ```
@@ -57,16 +56,9 @@ summary(mod_simple)
 ```{r}
 #Régression plus complexe (celle du prof)
 model <- glm(sui1 ~ age + statmar_2+ negp1_2 + negm1_2 +drog + metal, 
-             data = dat_lm %>% filter(sexe == 2), 
+             data = dat_lm, 
              family = binomial())
 summary(model)
-# Homme
-
-model2 <- glm(sui1 ~ age + statmar_2+ negp1_2 + negm1_2 +drog + metal, 
-             data = dat_lm %>% filter(sexe == 1), 
-             family = binomial())
-summary(model2)
-# Femme
 ```
 ---------------ÇA PART EN COUILLE ICI---------------
 
@@ -91,7 +83,7 @@ test.dat = test.dat %>% select_if(~ ! any(is.na(.)))
 
 ```{r}
 #Division des données d'entrainement en 10 groupes de 21 individus (observations)
-PARTITION = sample(rep(1:10, rep(21,10)),210)
+PARTITION = sample(rep(1:5, rep(42,5)),210)
 ```
 
 ```{r}
@@ -110,46 +102,17 @@ crossval <- function(mod){
 ```
 
 
-```{r}
-# Trouver le sd par colonne
-sd_per_column <- apply(dat_lm, 2, sd)
-
-# Enlever les colonnes avec sd = 0
-cols_with_zero_var <- which(sd_per_column == 0)
-
-# Supprimer les colonnes avec une variance nulle
-dat_sd <- dat_lm[, -cols_with_zero_var]
-
-dat_sd = dat_sd %>% select(-c("rencfois", "voipar", "tempsep"))
-
-corr_matrix <- cor(dat_sd, use = "pairwise.complete.obs")
-
-# trouver les indices des corrélations supérieures à 0,9
-high_corr_indices <- which(abs(corr_matrix) > 0.9 & upper.tri(corr_matrix), arr.ind = TRUE)
-high_corr_elements <- which(corr_matrix > 0.9, arr.ind = TRUE)
-
-# extraire les noms de variables correspondants
-var_names <- colnames(corr_matrix)
-```
-
 
 ```{r}
 # Régression normale
-glm0 <- glm(sui1 ~ . -nsujet -ecole, data=train.dat %>% filter(sexe == 
-    1), family = "binomial")
+glm0 <- glm(sui1 ~ ., data=dat_lm, family = "binomial")
 summary(glm0)
 ```
 
-
-```{r}
-# Régression normale
-glm0 <- glm(sui1 ~ . -nsujet -ecole -rencfois - voipar -tempsep, data=dat_lm, family = "binomial")
-summary(glm0)
-```
 
 --------------Logistique---------------
 ```{r}
-var.model = names(train.dat)[7:ncol(train.dat)]
+var.model = names(train.dat)
 ```
 
 ```{r}
@@ -180,10 +143,9 @@ sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cv0)))*100)
 
 ```{r}
 # Ridge
-var.model = names(train.dat)[7:ncol(train.dat)]
 
 cv.glmn1 <- cv.glmnet(x= train.dat[,var.model] %>% as.matrix,
-                      y = train.dat[,"sui1"], alpha = 0, nfolds = 10, 
+                      y = train.dat[,"sui1"], alpha = 0, nfolds = 5, 
                       foldid = PARTITION, intercept= TRUE, 
                       family = "binomial", standardize = TRUE)
 plot(cv.glmn1)
@@ -219,7 +181,7 @@ sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cv2)))*100)
 ##Régression logistique avec régularisation lasso
 #Sélection du lambda par validation croisée à 10 plis
 cv.glmn2 <- cv.glmnet(x = train.dat[,var.model] %>% as.matrix,
-                    y = train.dat[,"sui1"], alpha = 1, nfolds = 10,
+                    y = train.dat[,"sui1"], alpha = 1, nfolds = 5,
                     foldid = PARTITION, family = "binomial")
 
 glmn2 <- glmnet(x = train.dat[,var.model] %>%
@@ -264,7 +226,7 @@ layout(matrix(1:9,3,3, byrow = TRUE))
 for(al in seq(0.1,0.9,0.1)){
     cv.glmn3[[sprintf("%.1f",al)]] <-
     cv.glmnet(x = train.dat[,var.model] %>% as.matrix,
-    y = train.dat[,"sui1"], nfolds = 10, foldid = PARTITION,
+    y = train.dat[,"sui1"], nfolds = 5, foldid = PARTITION,
     alpha = al, family = "binomial")
 plot(cv.glmn3[[sprintf("%.1f",al)]],
 main = latex2exp::TeX(sprintf("$\\alpha = %.1f$",al)), ylim = c(1.18, 1.42))
@@ -299,7 +261,12 @@ cv4
 prop.table(cv4)*100
 sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cv4)))*100)
 ```
+-----------SGL-------------
+```{r}
+cv_fit <- cv.sparsegl(x = train.dat[,var.model] %>% as.matrix, y = train.dat[,"sui1"], groups)
+```
 
+-----------COMPARAISON-----------
 ### Validation des modèles avec l'échantillon test
 
 On prend maintenant l'échantillon de test et on valide nos prédictions basées sur le modèle construit avec l'échantillon d'entraînement.
@@ -342,4 +309,53 @@ cvt4 <- table(1*(glmn3tp>0), test.dat$sui1)
 cvt4
 prop.table(cvt4)*100
 sprintf("%.1f%% de bonne classification", sum(diag(prop.table(cvt4)))*100)
+```
+
+Pour finir, on calcule l'écart-type de la performance prédictive du modèle sur 1000 itérations à l'aide de bootstrapping.
+
+```{r}
+#Bootstrap
+set.seed(1234)
+
+#création fonction
+good.class <- function(model, i ){
+            if("glm" %in% class(model)){
+            glm1tp <- predict(glm1, newdata = test.dat[i,])
+            cvt1 <- table(1*(glm1tp>0), test.dat$sui1[i])
+            sum(diag(prop.table(cvt1)))*100
+}
+  else {glmn3tp <- predict(model,
+                           newx = test.dat[i,var.model] %>% as.matrix, s = "lambda.min")
+  (cvt4 <- table(1*(glmn3tp>0), test.dat$sui1)) %>%
+sum(diag(prop.table(cvt4)))*100
+  }
+}
+
+#régression "normale"
+sd(replicate(1000,good.class(glm1, sample(1:94, 94, TRUE))))
+#régression avec régularisation ridge
+sd(replicate(1000,good.class(cv.glmn1, sample(1:94, 94, TRUE))))
+#régression avec régularisation lasso
+sd(replicate(1000,good.class(cv.glmn2, sample(1:94, 94, TRUE))))
+#régression avec régularisation elastic-net
+sd(replicate(1000,good.class(cv.glmn3[[6]], sample(1:94, 94, TRUE))))
+```
+
+```{r output='hide', results='hide'}
+#Tableau de comparaison des coefficients de chaque modèle
+length(drop(coef(cv.glmn3[[6]],
+       s = "lambda.min",allCoef = TRUE)))
+
+coef(cv.glmn3[[6]], s = "lambda.min",allCoef = TRUE)
+```
+
+```{r}
+
+cf <- data.frame(VAR = c("Int.", var.model),
+                 OLS = drop(coef(glm1, s = "lambda.min",allCoef = TRUE)),
+                 RIDGE = drop(coef(cv.glmn1,s = "lambda.min",allCoef = TRUE)),
+                 LASSO = drop(coef(cv.glmn2,s = "lambda.min",allCoef = TRUE)),
+                 `ELASTIC NET` = drop(coef(cv.glmn3[[6]],
+                                           s = "lambda.min",allCoef = TRUE)))
+knitr::kable(cf, digits = 2,row.names = FALSE)
 ```
